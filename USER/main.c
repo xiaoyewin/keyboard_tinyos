@@ -27,7 +27,7 @@ char key_up_flag;	       //松开标记
 int key_count;//按键的次数，
 int  g_count;   //
 
-u16 g_tem_value;
+unsigned char g_tem_value;
 
 short g_temperature=0;  //pb9
 
@@ -67,7 +67,7 @@ void send_string_uart1(char *s,int length)
 	 	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);// 设置中断优先级分组2     嵌套中断控制器  2位抢占优先级  2位子优先级   
           
 	 
-	 
+	 u16  temp_ad_value;
 	 RecvStartFlag=0;
 		g_count=0;
 	 //串口现在可以作为调试的工具   这个串口用作调试的
@@ -101,11 +101,11 @@ void send_string_uart1(char *s,int length)
 	}			
 	 
 	//	printf("\r\nRTC2\r\n");
-	 int t,len,times;
+	 int len;
 	 
 	
-	 int i=0;
-	 unsigned char temp_uchar;
+
+
 
 	 	while(1)
 	{
@@ -121,17 +121,17 @@ void send_string_uart1(char *s,int length)
 				{
 						riqi_info[i]=USART_RX_BUF[i];
 				}
-				if((riqi_info[5]>=0)&&(riqi_info[5]<100))
+				if(riqi_info[5]<100)
 				{
-						 if((riqi_info[4]>=0)&&(riqi_info[4]<=12))
+						 if(riqi_info[4]<=12)
 						{
-							if((riqi_info[3]>=0)&&(riqi_info[3]<=31))
+							if(riqi_info[3]<=31)
 							{
-							   	if((riqi_info[2]>=0)&&(riqi_info[2]<=24))
+							   	if(riqi_info[2]<=24)
 									{
-							       	if((riqi_info[1]>=0)&&(riqi_info[1]<=60))
+							       	if(riqi_info[1]<=60)
 											{
-												if((riqi_info[0]>=0)&&(riqi_info[0]<=60))
+												if(riqi_info[0]<=60)
 												{
 																		
 													//然后在这里进行设置;
@@ -149,6 +149,36 @@ void send_string_uart1(char *s,int length)
 	
 		delay_ms(100);
 		g_temperature=DS18B20_Get_Temp();	
+		delay_ms(100);
+		temp_ad_value=Get_Adc_Average(ADC_Channel_1,10);
+		//g_tem_value  =  (temp_ad_value*157.66)/4095;     //这个要测试下   0.00385 
+		//大于 12.4V 为100%   小于 8.6V为 0% 
+		//11.4-12.4  占据40%
+		
+
+	  if(temp_ad_value<2235)
+		{
+				g_tem_value=0;
+		}
+		else if(temp_ad_value<2535)     //8.6-9.75  //为18%    300 
+		{
+				g_tem_value=(temp_ad_value-2235)*0.06;
+		}
+		else if(temp_ad_value<2735)     //9,75-10.52  //为20%    200
+		{
+				g_tem_value=(temp_ad_value-2535)*0.1+18;
+		}
+		else if(temp_ad_value<3178)     //9,75-11.3  //为62%     496   12.23
+		{
+				g_tem_value=(temp_ad_value-2735)*0.14+38;
+		}
+		else
+		{
+				g_tem_value=100;
+		}
+
+	
+		
 	  delay_ms(100);   
 }
 }
@@ -346,9 +376,7 @@ void send_string_uart1(char *s,int length)
 		
 		//g_tem_value=T_Get_Adc_Average(ADC_CH_TEMP,1); //这个是AD 的值
 		
-		g_tem_value=Get_Adc_Average(ADC_Channel_1,10);
-		float temp1;
-		short temp2;
+		
 		//	send_data_uart2(g_count);
 	//F0 是其他信息的FLAG,.有温度，电压//0:flag,1；电压，2,3: 温度   4,5,GPS ,X   6,7  GPS  Y
 	if(g_count==50)	   //1s
@@ -369,10 +397,10 @@ void send_string_uart1(char *s,int length)
 
 	//	g_tem_value=(short)temp1;
   //  一个是20k  一个 4.7      3* （24.7/4.7）
-		g_tem_value  =  (g_tem_value*157.66)/4095;     //这个要测试下   
+		   
 		char otherinfo_value[8];
 		otherinfo_value[0]=0xF0;
-		otherinfo_value[1]=0x12;
+		otherinfo_value[1]=g_tem_value;
 		otherinfo_value[2]=((g_temperature>>8)&0xff);
 		otherinfo_value[3]=(g_temperature&0xff);
 		otherinfo_value[4]=0x0;
