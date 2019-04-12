@@ -466,6 +466,11 @@
               <FileType>1</FileType>
               <FilePath>.\STM32F10x_FWLib\src\stm32f10x_adc.c</FilePath>
             </File>
+            <File>
+              <FileName>stm32f10x_dma.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\STM32F10x_FWLib\src\stm32f10x_dma.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -525,6 +530,16 @@
               <FileName>ds18b20.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\HARDWARE\ds18b20.c</FilePath>
+            </File>
+            <File>
+              <FileName>gps.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\HARDWARE\gps.c</FilePath>
+            </File>
+            <File>
+              <FileName>uart4.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\HARDWARE\uart4.c</FilePath>
             </File>
           </Files>
         </Group>

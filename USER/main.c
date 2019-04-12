@@ -17,6 +17,12 @@
 #include "tsensor.h"
 #include "adc.h"
 #include "ds18b20.h"
+#include "gps.h"
+#include "uart4.h"
+
+
+
+nmea_msg gpsx; 											//GPS信息
 
 unsigned char first_key_value=0;  //0就是没有键按下
 unsigned char second_key_value=0;  //0就是没有键按下
@@ -31,6 +37,11 @@ unsigned char g_tem_value;
 
 short g_temperature=0;  //pb9
 
+extern u8  g_lcd_stat;   //对方LCD 的状态
+
+#define LCD_SHOW_STAT   0X41
+//先设置下整体的优先级序列
+
 
 //你内部芯片的温差有点大，所以用DS18B20芯片
 
@@ -41,7 +52,8 @@ void send_string_uart1(char *s,int length)
 	{
 		return;
 	}
-	else{
+	else
+	{
 		for(int i=0;i<length;i++)
 		{
 			 while(1)
@@ -51,14 +63,14 @@ void send_string_uart1(char *s,int length)
 						USART1->DR =s[i]; 
 					 break;
 				 }
-
 			 }	
-				 
 		}
 	}
-
-
 }
+
+
+#define SUPPORT_GPS   0
+
  int main(void)
  {		
 		delay_init();	    	 //延时函数初始化 主要用来设置systick 的频率，等时钟源
@@ -73,6 +85,46 @@ void send_string_uart1(char *s,int length)
 	 //串口现在可以作为调试的工具   这个串口用作调试的
 	 uart1_init(9600);	 //串口初始化为15200
 	 
+	  //需要初始化串口4   串口4用于GPS
+	 
+#if SUPPORT_GPS  							//如果需要支持GPS
+	 UART4_Init(38400);  //初始化串口4波特率为38400
+	 
+
+	 
+	 u8  gps_cfg_flag=0;
+	 
+	 u8 key=0XFF;
+	 gps_cfg_flag=SkyTra_Cfg_Rate(5);
+	 if(gps_cfg_flag!=0)
+	 {
+		do
+		{
+				UART4_Init(9600);			//初始化串口3波特率为9600
+				SkyTra_Cfg_Prt(3);			//重新设置模块的波特率为38400
+				UART4_Init(38400);			//初始化串口3波特率为38400
+				key=SkyTra_Cfg_Tp(100000);	//脉冲宽度为100ms
+		}while(SkyTra_Cfg_Rate(5)!=0&&key!=0);//配置SkyTraF8-BD的更新速率为5Hz
+	 }
+	 
+	 
+	 u16 rxlen;
+	 
+	while(1) 
+	{		
+		delay_ms(1);
+		if(UART4_RX_STA&0X8000)		//接收到一次数据了
+		{
+			int i;
+			rxlen=UART4_RX_STA&0X7FFF;	//得到数据长度
+			for(i=0;i<rxlen;i++)UART4_TX_BUF[i]=UART4_RX_BUF[i];	   
+ 			UART4_RX_STA=0;		   	//启动下一次接收
+			UART4_TX_BUF[i]=0;			//自动添加结束符
+			GPS_Analysis(&gpsx,(u8*)UART4_RX_BUF);//分析字符串
+		
+ 		}
+	}
+	 #endif
 	//这个用25ms做一次,   设置一个定时器
  // 还要考虑长按
  //定时器1s传递下，温度，GPS, AD电压值，倒是以一个特定的格式就可以了
@@ -100,16 +152,11 @@ void send_string_uart1(char *s,int length)
  		delay_ms(200);
 	}			
 	 
-	//	printf("\r\nRTC2\r\n");
 	 int len;
 	 
-	
 
-
-
-	 	while(1)
+	 while(1)
 	{
-		
 		if(USART_RX_STA&0x8000)   //  表示有节点哈偶   表示接收到了数据
 		{	
 			len=USART_RX_STA&0x3fff;//得到此次接收到的数据长度
@@ -142,8 +189,6 @@ void send_string_uart1(char *s,int length)
 							}
 						}
 				}
-
-				
 			}	
 		}
 	
@@ -180,11 +225,12 @@ void send_string_uart1(char *s,int length)
 	
 		
 	  delay_ms(100);   
+	}
 }
-}
  
  
  
+//为了防止 干扰，增加一次时间
  
  void TIM3_IRQHandler(void)   //TIM3中断
 {
@@ -195,12 +241,8 @@ void send_string_uart1(char *s,int length)
 		//在这里处理键盘   //低电平表示按下
 			
 			char key_value[2];
-//			char key_value[2];
-//			char key_value[2];
+
 			char temp_key1=0x0;
-//			temp_value1[0]=0x10;
-//			 temp_value1[1]=0x12;
-//			 printf("%s",temp_value1);
 
 	
 		//还要考虑P0还会同时按住2个按键
@@ -305,17 +347,26 @@ void send_string_uart1(char *s,int length)
 					key_count++;    //在这里还要考虑长按   长按只有一次，超过这些就没有按键信息
 					if(key_count>16)
 					{
-						if(key_count%8==0)
+						if(key_count%4==0)
 						{
 							if((temp_key1>=3)&&(temp_key1<=8))	//只有F1-F6有长按
 							{	
-								if(key_count==32)      //只有F1-F6 有长按
-								{
-										key_value[0]=0xf1;
-										key_value[1]=(temp_key1|0x40);
-										send_string_uart1(key_value,2);
+									if(g_lcd_stat==LCD_SHOW_STAT)
+									{
+												if(key_count==32)      //只有F1-F6 有长按
+												{
+													key_value[0]=0xf1;
+													key_value[1]=(temp_key1|0x40);
+													send_string_uart1(key_value,2);
+												}
+									}
+									else
+									{
+													key_value[0]=0xf1;
+													key_value[1]=(temp_key1|0x40);
+													send_string_uart1(key_value,2);
+									}
 
-								}
 							}
 							else
 							{	 
@@ -331,21 +382,23 @@ void send_string_uart1(char *s,int length)
 			{
 					if(temp_key1==0)   //表示有效  //长按的落下时没用的
 					{
-						if(key_count>=32)
+						if(key_count>=16)
 						{
-							key_down_flag=0;
-							key_count=0;		
+							key_down_flag=0;	
 						}
-						else
+						else if(key_count<2 )  //表示无效  一般1就可以了
+						{
+							key_down_flag=0;	
+						}	
+						else   //2<x<15
 						{
 							second_key_value=first_key_value;
 							key_up_flag=1;   //表示按键松开来了.
-						}	
+						}
 					}
 					else    //从新开始
 					{
 						first_key_value=temp_key1;
-						key_count=0;
 					}
 					key_count=0;
 				}
@@ -367,35 +420,17 @@ void send_string_uart1(char *s,int length)
 			{  
 					key_down_flag=0;
 					key_up_flag=0;
-				 key_value[0]=0xf1;
-				 key_value[1]=second_key_value;
-				 send_string_uart1(key_value,2);
+				  key_value[0]=0xf1;
+				  key_value[1]=second_key_value;
+				  send_string_uart1(key_value,2);
 			}
 		}
-		
-		
-		//g_tem_value=T_Get_Adc_Average(ADC_CH_TEMP,1); //这个是AD 的值
-		
-		
-		//	send_data_uart2(g_count);
+
 	//F0 是其他信息的FLAG,.有温度，电压//0:flag,1；电压，2,3: 温度   4,5,GPS ,X   6,7  GPS  Y
 	if(g_count==50)	   //1s
 	{
 		g_count=0;
-//		send_data_uart2(0xF0);
-//		send_data_uart2(g_adc_value);
-//		send_data_uart2((g_temperature>>8)&0xff);
-//		send_data_uart2(g_temperature&0xff);
-//    	send_data_uart2(0);
-//		send_data_uart2(0);
-//	    send_data_uart2(0);
-//		send_data_uart2(0);
-		
-	
-	//	temp1=(float)g_tem_value*(3.3/4096);
- 		//temp1=(1.43-temp1)/0.0043+25;		//计算出当前温度值	   //这个暂时不用管，等明天验证下 
 
-	//	g_tem_value=(short)temp1;
   //  一个是20k  一个 4.7      3* （24.7/4.7）
 		   
 		char otherinfo_value[8];
@@ -416,18 +451,17 @@ void send_string_uart1(char *s,int length)
 	else if(g_count==25)
 	{
 		g_count=26;
-	char riqi_value[7];
+		char riqi_value[7];
 	
-	riqi_value[0]=0xF2;
-	riqi_value[1]=calendar.sec;
-	riqi_value[2]=calendar.min;
-	riqi_value[3]=calendar.hour;
-	riqi_value[4]=calendar.w_date;
-	riqi_value[5]=calendar.w_month;
-	riqi_value[6]=(calendar.w_year-2000);
+		riqi_value[0]=0xF2;
+		riqi_value[1]=calendar.sec;
+		riqi_value[2]=calendar.min;
+		riqi_value[3]=calendar.hour;
+		riqi_value[4]=calendar.w_date;
+		riqi_value[5]=calendar.w_month;
+		riqi_value[6]=(calendar.w_year-2000);
 
-	send_string_uart1(riqi_value,7);
-	// printf("%s",riqi_value);     //printf() 这个函数会时不时的输出0XE0  不知道是什么意思
+		send_string_uart1(riqi_value,7);
 	}
 	else
 	{	
@@ -435,13 +469,9 @@ void send_string_uart1(char *s,int length)
 
 	}
 		
-			
-			
-		
-			
 			//printf("\r\n您发送的为=%d:\r\n",g_tem_value);
 			
-		}
+	}
 }
 
 
@@ -459,8 +489,8 @@ void RTC_IRQHandler(void)
 	{
 		RTC_ClearITPendingBit(RTC_IT_ALR);		//清闹钟中断	  	   
   	} 				  								 
-	RTC_ClearITPendingBit(RTC_IT_SEC|RTC_IT_OW);		//清闹钟中断
-	RTC_WaitForLastTask();	  	    						 	   	 
+		RTC_ClearITPendingBit(RTC_IT_SEC|RTC_IT_OW);		//清闹钟中断
+		RTC_WaitForLastTask();	  	    						 	   	 
 }
  
 

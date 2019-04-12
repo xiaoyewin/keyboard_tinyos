@@ -68,7 +68,9 @@ u8 USART_RX_BUF[USART_REC_LEN];     //接收缓冲,最大USART_REC_LEN个字节.
 //bit15，	接收完成标志
 //bit14，	接收到0x5A 或
 //bit13~0，	接收到的有效字节数目
-u16 USART_RX_STA=0;       //接收状态标记	  
+u16 USART_RX_STA=0;       //接收状态标记	 
+
+u8 g_lcd_stat=0;
   
 //表示接收到的开始字节
 unsigned char RecvStartFlag=0;
@@ -94,7 +96,7 @@ void uart1_init(u32 bound){
   //Usart1 NVIC 配置
   NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
 	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority=0 ;//抢占优先级3
-	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;		//子优先级3      优先级设置为最好
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;		//子优先级3      优先级设置为最好
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;			//IRQ通道使能
 	NVIC_Init(&NVIC_InitStructure);	//根据指定的参数初始化VIC寄存器     //1,确定该中断的优先级，然后 使能/禁止该位
   
@@ -172,7 +174,6 @@ void USART1_IRQHandler(void)                	//串口1中断服务程序
 		
 		if(RecvStartFlag==0x5a)
 		{
-			
 			if((USART_RX_STA&0x8000)==0)
 			{
 					if(USART_RX_STA&0x4000)   //接收到的第一个字节为0xf2 表示修改的时间
@@ -185,6 +186,7 @@ void USART1_IRQHandler(void)                	//串口1中断服务程序
 							 USART_RX_STA|=0x8000;
 						}
 						
+						//0x41 是A超界面       0x42是B超界面
 					}
 					else     //还接不到0xf2
 					{
@@ -192,6 +194,11 @@ void USART1_IRQHandler(void)                	//串口1中断服务程序
 							{
 									USART_RX_STA|=0x4000;
 							}
+							else
+							{
+									g_lcd_stat=Res;
+							}
+								
 					}
 			}
 
